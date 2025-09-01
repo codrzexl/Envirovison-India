@@ -1,0 +1,41 @@
+# EnviroVision India Configuration
+project:
+  name: "EnviroVision India"
+  version: "1.0.0"
+  description: "Environmental Scene Classification using Deep Learning"
+
+data:
+  image_size: [224, 224]
+  batch_size: 32
+  validation_split: 0.2
+  test_split: 0.1
+  num_classes:
+    rainfall: 3  # Light, Moderate, Heavy
+    heatwave: 3  # Normal, Mild, Extreme
+    air_quality: 3  # Good, Moderate, Unhealthy
+
+classes:
+  rainfall: ["Light", "Moderate", "Heavy"]
+  heatwave: ["Normal", "Mild", "Extreme"]
+  air_quality: ["Good", "Moderate", "Unhealthy"]
+
+model:
+  architecture: "efficientnet"  # resnet18, efficientnet, vit
+  input_shape: [224, 224, 3]
+  dropout_rate: 0.3
+  learning_rate: 0.001
+  epochs: 50
+  early_stopping_patience: 10
+
+training:
+  optimizer: "adam"
+  loss: "categorical_crossentropy"
+  metrics: ["accuracy", "f1_score"]
+  class_weights: true
+  data_augmentation: true
+
+paths:
+  data_dir: "data/"
+  models_dir: "models/"
+  logs_dir: "logs/"
+  results_dir: "results/"
