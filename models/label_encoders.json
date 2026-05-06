@@ -1,0 +1,23 @@
+{
+  "rainfall": {
+    "classes": [
+      "Light",
+      "Moderate",
+      "Heavy"
+    ]
+  },
+  "heatwave": {
+    "classes": [
+      "Normal",
+      "Mild",
+      "Extreme"
+    ]
+  },
+  "air_quality": {
+    "classes": [
+      "Good",
+      "Moderate",
+      "Unhealthy"
+    ]
+  }
+}
