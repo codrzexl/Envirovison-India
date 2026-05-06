@@ -91,16 +91,11 @@ class ModelManager:
                     # Try to use regular GradCAM, fallback to SimpleGradCAM for dummy models
                     try:
                         self.grad_cams[category] = GradCAM(self.models[category])
-                        st.success(f"✅ Loaded {category} model with GradCAM")
-                    except Exception as gradcam_error:
-                        # Use SimpleGradCAM for dummy models
+                    except Exception:
                         self.grad_cams[category] = SimpleGradCAM(self.models[category])
-                        st.success(f"✅ Loaded {category} model with SimpleGradCAM")
                         
                 except Exception as e:
                     st.error(f"❌ Failed to load {category} model: {e}")
-            else:
-                st.warning(f"⚠️ Model not found: {model_path}")
     
     def load_label_encoders(self):
         """Load label encoders"""
@@ -112,45 +107,31 @@ class ModelManager:
             for category, encoder_data in encoders_data.items():
                 self.label_encoders[category] = encoder_data['classes']
         else:
-            # Use default classes from config
             for category in ['rainfall', 'heatwave', 'air_quality']:
                 self.label_encoders[category] = config.get(f'classes.{category}')
     
     def preprocess_image(self, image):
         """Preprocess image for prediction"""
-        # Convert PIL to numpy array
         if isinstance(image, Image.Image):
             image = np.array(image)
-        
-        # Resize and normalize
         image = cv2.resize(image, tuple(config.get('data.image_size')))
         image = image.astype(np.float32) / 255.0
-        
-        # Apply ImageNet normalization
         mean = np.array([0.485, 0.456, 0.406])
         std = np.array([0.229, 0.224, 0.225])
         image = (image - mean) / std
-        
         return image
     
     def predict_category(self, image, category):
         """Make prediction for a specific category"""
         if category not in self.models:
-            return None, None
-        
-        # Preprocess image
+            return None, None, None
         processed_image = self.preprocess_image(image)
         image_batch = np.expand_dims(processed_image, axis=0)
-        
-        # Make prediction
         predictions = self.models[category].predict(image_batch, verbose=0)[0]
         predicted_class_idx = np.argmax(predictions)
         confidence = predictions[predicted_class_idx]
-        
-        # Get class name
         class_names = self.label_encoders[category]
         predicted_class = class_names[predicted_class_idx]
-        
         return predicted_class, confidence, predictions
     
     def generate_grad_cam(self, image, category, class_idx=None):
@@ -158,22 +139,11 @@ class ModelManager:
         try:
             if category not in self.grad_cams:
                 return None, None
-            
             processed_image = self.preprocess_image(image)
-            
-            # Generate heatmap
-            heatmap = self.grad_cams[category].generate_heatmap(
-                processed_image, class_index=class_idx
-            )
-            
-            # Create overlay
-            overlay, heatmap_colored = self.grad_cams[category].overlay_heatmap(
-                processed_image, heatmap
-            )
-            
+            heatmap = self.grad_cams[category].generate_heatmap(processed_image, class_index=class_idx)
+            overlay, heatmap_colored = self.grad_cams[category].overlay_heatmap(processed_image, heatmap)
             return overlay, heatmap_colored
-        except Exception as e:
-            print(f"Error generating Grad-CAM for {category}: {e}")
+        except Exception:
             return None, None
 
 # Initialize model manager
@@ -190,7 +160,6 @@ def display_risk_banner(api_results):
     status = api_results.get('weather_status', 'Unknown')
     emoji = api_results.get('weather_emoji', '❓')
     
-    # Determine color and message based on risk
     if risk_score < 3:
         color = "#28a745"
         msg = "Safe Environment"
@@ -211,10 +180,10 @@ def display_risk_banner(api_results):
         <p style="margin: 5px 0 0 0; font-size: 1.1rem;">{sub}</p>
     </div>
     """, unsafe_allow_html=True)
+
 def display_api_data(city_data, api_results):
     """Display real-time environmental data from API"""
     st.markdown(f"### 📡 Live Monitoring: {city_data['name']}")
-    
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -234,7 +203,6 @@ def display_api_data(city_data, api_results):
         aqi_label = api_results['air_quality']['label']
         st.metric("Air Quality (AQI)", f"{aqi_val}", delta=aqi_label, delta_color="inverse")
     
-    # AQI Meter (Gauge Chart)
     st.markdown("#### 🔘 Real-time AQI Meter")
     aqi_color = api_results['air_quality'].get('color', 'blue')
     
@@ -254,11 +222,7 @@ def display_api_data(city_data, api_results):
                 {'range': [201, 300], 'color': "#8F3F97"},
                 {'range': [301, 500], 'color': "#7E0023"}
             ],
-            'threshold': {
-                'line': {'color': "black", 'width': 4},
-                'thickness': 0.75,
-                'value': aqi_val
-            }
+            'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': aqi_val}
         }
     ))
     fig_gauge.update_layout(height=350, margin=dict(l=10, r=10, t=50, b=10))
@@ -268,23 +232,16 @@ def display_heatwave_deep_dive(heat_data):
     """Visual thermometer and heat safety advisory"""
     st.markdown("---")
     st.markdown("### 🌡️ Heatwave Analysis & Safety Advisory")
-    
     col1, col2 = st.columns([1, 2])
     
     with col1:
-        # Vertical Thermometer using a Gauge
         temp = heat_data['value']
         color = heat_data['color']
-        
         fig_therm = go.Figure(go.Indicator(
-            mode = "gauge+number",
-            value = temp,
-            domain = {'x': [0, 1], 'y': [0, 1]},
+            mode = "gauge+number", value = temp, domain = {'x': [0, 1], 'y': [0, 1]},
             title = {'text': "Thermometer (°C)"},
             gauge = {
-                'shape': "bullet",
-                'axis': {'range': [20, 60]},
-                'bar': {'color': color},
+                'shape': "bullet", 'axis': {'range': [20, 60]}, 'bar': {'color': color},
                 'steps': [
                     {'range': [20, 35], 'color': "lightblue"},
                     {'range': [35, 40], 'color': "yellow"},
@@ -299,8 +256,6 @@ def display_heatwave_deep_dive(heat_data):
     with col2:
         st.markdown(f"#### **Category:** {heat_data['label']}")
         st.warning(f"🌡️ **Heat Advisory:** {heat_data['recommendation']}")
-        
-        # Detail metrics
         c1, c2 = st.columns(2)
         c1.metric("Relative Humidity", f"{heat_data['humidity']}%")
         c2.metric("Heat Index (Feels Like)", f"{heat_data['feels_like']} °C")
@@ -309,25 +264,17 @@ def display_rainfall_deep_dive(rain_data):
     """Rainfall intensity gauge and flood safety advisory"""
     st.markdown("---")
     st.markdown("### 🌧️ Rainfall Analysis & Flood Safety")
-    
     col1, col2 = st.columns([1, 2])
     
     with col1:
-        # Water Level Gauge
         val = rain_data['value']
         color = rain_data['color']
-        
         fig_rain = go.Figure(go.Indicator(
-            mode = "gauge+number",
-            value = val,
-            domain = {'x': [0, 1], 'y': [0, 1]},
+            mode = "gauge+number", value = val, domain = {'x': [0, 1], 'y': [0, 1]},
             title = {'text': "Rain Intensity (mm)"},
             gauge = {
-                'axis': {'range': [0, 50]},
-                'bar': {'color': color},
-                'bgcolor': "white",
-                'borderwidth': 2,
-                'bordercolor': "gray",
+                'axis': {'range': [0, 50]}, 'bar': {'color': color},
+                'bgcolor': "white", 'borderwidth': 2, 'bordercolor': "gray",
                 'steps': [
                     {'range': [0, 2.5], 'color': "#e0f7fa"},
                     {'range': [2.5, 7.5], 'color': "#81d4fa"},
@@ -342,8 +289,6 @@ def display_rainfall_deep_dive(rain_data):
     with col2:
         st.markdown(f"#### **Intensity:** {rain_data['label']}")
         st.info(f"🌊 **Flood Advisory:** {rain_data['recommendation']}")
-        
-        # Detail metrics
         c1, c2 = st.columns(2)
         c1.metric("Precipitation Probability", f"{rain_data['pop']}%")
         c2.metric("Accumulated (Current)", f"{rain_data['value']} mm")
@@ -351,399 +296,139 @@ def display_rainfall_deep_dive(rain_data):
 def display_comparison(ai_preds, api_data):
     """Compare AI predictions with Ground Truth API data"""
     st.markdown("### ⚖️ AI vs. Ground Truth Comparison")
-    
     comparison_data = []
     for cat in ['rainfall', 'heatwave', 'air_quality']:
         if cat in ai_preds and cat in api_data:
             ai_label = ai_preds[cat]['predicted_class']
             api_label = api_data[cat]['label']
             match = "✅ Match" if ai_label.lower() in api_label.lower() or api_label.lower() in ai_label.lower() else "⚠️ Variance"
-            
-            comparison_data.append({
-                "Category": cat.title().replace("_", " "),
-                "AI Prediction": ai_label,
-                "API Ground Truth": api_label,
-                "Status": match
-            })
-    
-    if comparison_data:
-        st.table(pd.DataFrame(comparison_data))
-    else:
-        st.info("Upload an image to see the comparison with live data.")
+            comparison_data.append({"Category": cat.title().replace("_", " "), "AI Prediction": ai_label, "API Ground Truth": api_label, "Status": match})
+    if comparison_data: st.table(pd.DataFrame(comparison_data))
 
 def display_location_map(lat, lon):
     """Show the selected location on a map"""
-    layer = pdk.Layer(
-        'ScatterplotLayer',
-        data=pd.DataFrame({'lat': [lat], 'lon': [lon]}),
-        get_position='[lon, lat]',
-        get_color='[200, 30, 0, 160]',
-        get_radius=1000,
-    )
-    
-    view_state = pdk.ViewState(
-        latitude=lat,
-        longitude=lon,
-        zoom=11,
-        pitch=50,
-    )
-    
-    st.pydeck_chart(pdk.Deck(
-        map_style=None,
-        initial_view_state=view_state,
-        layers=[layer]
-    ))
+    layer = pdk.Layer('ScatterplotLayer', data=pd.DataFrame({'lat': [lat], 'lon': [lon]}), get_position='[lon, lat]', get_color='[200, 30, 0, 160]', get_radius=1000)
+    view_state = pdk.ViewState(latitude=lat, longitude=lon, zoom=11, pitch=50)
+    st.pydeck_chart(pdk.Deck(map_style=None, initial_view_state=view_state, layers=[layer]))
 
 def display_trend_charts(trends):
     """Display 24-hour trend charts for Temp and Rain"""
-    if not trends['times']:
-        return
-        
-    df = pd.DataFrame({
-        'Time': pd.to_datetime(trends['times']),
-        'Temperature (°C)': trends['temp'],
-        'Precipitation (mm)': trends['precip']
-    })
-    
+    if not trends['times']: return
+    df = pd.DataFrame({'Time': pd.to_datetime(trends['times']), 'Temperature (°C)': trends['temp'], 'Precipitation (mm)': trends['precip']})
     st.markdown("### 📈 24-Hour Trends")
     tab1, tab2 = st.tabs(["Temperature Trend", "Rainfall Trend"])
-    
-    with tab1:
-        fig_temp = px.line(df, x='Time', y='Temperature (°C)', title='Temperature Over Time')
-        st.plotly_chart(fig_temp, use_container_width=True)
-        
-    with tab2:
-        fig_rain = px.bar(df, x='Time', y='Precipitation (mm)', title='Expected Rainfall')
-        st.plotly_chart(fig_rain, use_container_width=True)
+    with tab1: st.plotly_chart(px.line(df, x='Time', y='Temperature (°C)', title='Temperature Over Time'), use_container_width=True)
+    with tab2: st.plotly_chart(px.bar(df, x='Time', y='Precipitation (mm)', title='Expected Rainfall'), use_container_width=True)
 
 def display_aqi_deep_dive(aqi_data, trends):
     """Deep dive into Air Quality Pollutants and Health Advice"""
     st.markdown("---")
     st.markdown("### 🌫️ AQI Deep Dive & Health Advisory")
-    
     col1, col2 = st.columns([1, 1])
-    
     with col1:
         st.markdown(f"#### **Status:** {aqi_data['label']}")
         st.info(f"💡 **Health Advice:** {aqi_data['recommendation']}")
-        
-        # Pollutants Table
-        st.markdown("**Detailed Pollutants:**")
-        p_df = pd.DataFrame(aqi_data['pollutants'].items(), columns=['Pollutant', 'Value (µg/m³)'])
-        st.dataframe(p_df, hide_index=True, use_container_width=True)
-        
+        st.dataframe(pd.DataFrame(aqi_data['pollutants'].items(), columns=['Pollutant', 'Value (µg/m³)']), hide_index=True, use_container_width=True)
     with col2:
         if 'aqi_times' in trends:
-            st.markdown("**24-Hour AQI Trend:**")
-            aqi_df = pd.DataFrame({
-                'Time': pd.to_datetime(trends['aqi_times']),
-                'AQI': trends['aqi_values']
-            })
-            fig_aqi = px.area(aqi_df, x='Time', y='AQI', title='AQI Forecast', color_discrete_sequence=['#ff4b4b'])
-            fig_aqi.update_layout(height=250)
-            st.plotly_chart(fig_aqi, use_container_width=True)
-            
-        # Add Radar Chart for Pollutants
-        st.markdown("**Pollutant 'Fingerprint' (Radar):**")
+            aqi_df = pd.DataFrame({'Time': pd.to_datetime(trends['aqi_times']), 'AQI': trends['aqi_values']})
+            st.plotly_chart(px.area(aqi_df, x='Time', y='AQI', title='AQI Forecast', color_discrete_sequence=['#ff4b4b']).update_layout(height=250), use_container_width=True)
         categories = list(aqi_data['pollutants'].keys())
         values = list(aqi_data['pollutants'].values())
-        
-        fig_radar = go.Figure()
-        fig_radar.add_trace(go.Scatterpolar(
-            r=values,
-            theta=categories,
-            fill='toself',
-            name='Pollutants',
-            line_color='#1f77b4'
-        ))
-        fig_radar.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, max(values) * 1.2])),
-            showlegend=False,
-            height=300,
-            margin=dict(l=40, r=40, t=20, b=20)
-        )
+        fig_radar = go.Figure(go.Scatterpolar(r=values, theta=categories, fill='toself', name='Pollutants', line_color='#1f77b4'))
+        fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, max(values) * 1.2])), showlegend=False, height=300)
         st.plotly_chart(fig_radar, use_container_width=True)
+
 def main():
     st.markdown('<h1 class="main-header">🌍 EnviroVision India</h1>', unsafe_allow_html=True)
     st.markdown("### AI-Powered Environmental Scene Classification")
     
-    # Sidebar
     st.sidebar.title("🎛️ Controls")
-    
-    # Input method selection
-    input_method = st.sidebar.selectbox(
-        "Choose Input Method",
-        ["Upload Image", "Camera Capture", "Webcam Stream"]
-    )
-    
-    # Category selection
-    selected_categories = st.sidebar.multiselect(
-        "Select Categories to Analyze",
-        ["rainfall", "heatwave", "air_quality"],
-        default=["rainfall", "heatwave", "air_quality"]
-    )
-    
-    # Visualization options
+    input_method = st.sidebar.selectbox("Choose Input Method", ["Upload Image", "Camera Capture", "Webcam Stream"])
+    selected_categories = st.sidebar.multiselect("Select Categories to Analyze", ["rainfall", "heatwave", "air_quality"], default=["rainfall", "heatwave", "air_quality"])
     show_grad_cam = st.sidebar.checkbox("Show Grad-CAM Visualization", value=True)
     show_confidence_chart = st.sidebar.checkbox("Show Confidence Chart", value=True)
     
     st.sidebar.markdown("---")
     st.sidebar.subheader("📍 Real-time Monitoring")
-    
-    indian_cities = [
-        "New Delhi", "Mumbai", "Bangalore", "Hyderabad", "Ahmedabad", 
-        "Chennai", "Kolkata", "Surat", "Pune", "Jaipur", "Lucknow", 
-        "Kanpur", "Nagpur", "Indore", "Thane", "Bhopal", "Visakhapatnam", 
-        "Pimpri-Chinchwad", "Patna", "Vadodara", "Ghaziabad", "Ludhiana", 
-        "Coimbatore", "Agra", "Madurai", "Nashik"
-    ]
-    
+    indian_cities = ["New Delhi", "Mumbai", "Bangalore", "Hyderabad", "Ahmedabad", "Chennai", "Kolkata", "Surat", "Pune", "Jaipur", "Lucknow", "Kanpur", "Nagpur", "Indore", "Thane", "Bhopal", "Visakhapatnam", "Pimpri-Chinchwad", "Patna", "Vadodara", "Ghaziabad", "Ludhiana", "Coimbatore", "Agra", "Madurai", "Nashik"]
     city_name = st.sidebar.selectbox("Select City (India)", sorted(indian_cities))
     
-    # Fetch API Data
     city_data = EnvironmentalAPI.get_location_coordinates(city_name)
     api_results = None
-    
     if city_data:
         weather_data = EnvironmentalAPI.get_weather_data(city_data['lat'], city_data['lon'])
         aq_data = EnvironmentalAPI.get_air_quality_data(city_data['lat'], city_data['lon'])
         api_results = EnvironmentalAPI.classify_from_api(weather_data, aq_data)
-        
         st.sidebar.success(f"📍 Station: {city_data.get('admin1', 'N/A')}")
         st.sidebar.info(f"🏙️ Area: {city_data.get('name', 'N/A')}")
-    else:
-        st.sidebar.error("Location data error.")
     
     st.sidebar.markdown("---")
     st.sidebar.subheader("🧠 Intelligence Layer")
-    gemini_key = st.sidebar.text_input(
-        "Gemini API Key", 
-        value="AIzaSyBtt79Hl4RUNHvcMykCfBOnRWr-6bPy96g",
-        type="password", 
-        help="Free key from aistudio.google.com - Already pre-filled for you."
-    )
+    gemini_key = st.sidebar.text_input("Gemini API Key", value="AIzaSyBtt79Hl4RUNHvcMykCfBOnRWr-6bPy96g", type="password")
     ai_service = GeminiService(gemini_key) if gemini_key else None
     
-    # Main content area
-    if api_results:
-        display_risk_banner(api_results)
-        
-    col1, col2 = st.columns([1, 1])
+    if api_results: display_risk_banner(api_results)
     
+    col1, col2 = st.columns([1, 1])
     with col1:
         st.markdown("### 📤 Input")
-        
         image = None
-        
         if input_method == "Upload Image":
-            uploaded_file = st.file_uploader(
-                "Choose an image...",
-                type=['jpg', 'jpeg', 'png'],
-                help="Upload an environmental scene image"
-            )
-            
-            if uploaded_file is not None:
-                image = Image.open(uploaded_file)
-                st.image(image, caption="Uploaded Image", use_container_width=True)
-        
+            uploaded_file = st.file_uploader("Choose an image...", type=['jpg', 'jpeg', 'png'])
+            if uploaded_file: image = Image.open(uploaded_file); st.image(image, caption="Uploaded Image", use_container_width=True)
         elif input_method == "Camera Capture":
             camera_image = st.camera_input("Take a picture")
-            
-            if camera_image is not None:
-                image = Image.open(camera_image)
-                st.image(image, caption="Captured Image", use_container_width=True)
-        
+            if camera_image: image = Image.open(camera_image); st.image(image, caption="Captured Image", use_container_width=True)
         elif input_method == "Webcam Stream":
             st.info("Webcam streaming feature - Click 'START' to begin")
-            
-            class VideoTransformer(VideoTransformerBase):
-                def __init__(self):
-                    self.latest_frame = None
-                
-                def transform(self, frame):
-                    img = frame.to_ndarray(format="bgr24")
-                    self.latest_frame = img
-                    return img
-            
-            webrtc_ctx = webrtc_streamer(
-                key="environmental-classification",
-                video_processor_factory=VideoTransformer,
-                rtc_configuration=RTCConfiguration(
-                    {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
-                )
-            )
-            
-            if webrtc_ctx.video_transformer:
-                if st.button("Capture Frame"):
-                    if webrtc_ctx.video_transformer.latest_frame is not None:
-                        frame = webrtc_ctx.video_transformer.latest_frame
-                        image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                        st.image(image, caption="Captured Frame", use_container_width=True)
+            webrtc_ctx = webrtc_streamer(key="environmental-classification", rtc_configuration=RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}))
+            if webrtc_ctx.video_transformer and st.button("Capture Frame"):
+                if webrtc_ctx.video_transformer.latest_frame is not None:
+                    image = Image.fromarray(cv2.cvtColor(webrtc_ctx.video_transformer.latest_frame, cv2.COLOR_BGR2RGB))
+                    st.image(image, caption="Captured Frame", use_container_width=True)
     
     with col2:
         st.markdown("### 📊 Predictions")
-        
-        if image is not None:
-            # Make predictions for selected categories
+        if image:
             predictions_data = {}
-            
             for category in selected_categories:
-                if category in model_manager.models:
-                    pred_class, confidence, all_preds = model_manager.predict_category(image, category)
-                    
-                    if pred_class is not None:
-                        predictions_data[category] = {
-                            'predicted_class': pred_class,
-                            'confidence': confidence,
-                            'all_predictions': all_preds
-                        }
+                pred_class, confidence, all_preds = model_manager.predict_category(image, category)
+                if pred_class: predictions_data[category] = {'predicted_class': pred_class, 'confidence': confidence, 'all_predictions': all_preds}
             
-            # Display predictions
             for category, pred_data in predictions_data.items():
-                st.markdown(f'<div class="category-header">🌡️ {category.title()} Classification</div>', 
-                           unsafe_allow_html=True)
-                
-                confidence = pred_data['confidence']
-                pred_class = pred_data['predicted_class']
-                
-                # Color code confidence
-                if confidence > 0.8:
-                    conf_class = "confidence-high"
-                elif confidence > 0.6:
-                    conf_class = "confidence-medium"
-                else:
-                    conf_class = "confidence-low"
-                
-                st.markdown(f'''
-                <div class="prediction-box">
-                    <strong>Prediction:</strong> {pred_class}<br>
-                    <strong>Confidence:</strong> <span class="{conf_class}">{confidence:.2%}</span>
-                </div>
-                ''', unsafe_allow_html=True)
-                
-                # Show confidence chart
-                if show_confidence_chart:
-                    class_names = model_manager.label_encoders[category]
-                    all_preds = pred_data['all_predictions']
-                    
-                    fig = px.bar(
-                        x=class_names,
-                        y=all_preds,
-                        title=f"{category.title()} - All Class Probabilities",
-                        labels={'x': 'Classes', 'y': 'Probability'}
-                    )
-                    fig.update_layout(height=300)
-                    st.plotly_chart(fig, use_container_width=True)
-            
-            # Comparison Section
-            if api_results:
-                display_comparison(predictions_data, api_results)
+                st.markdown(f'<div class="category-header">🌡️ {category.title()} Classification</div>', unsafe_allow_html=True)
+                conf = pred_data['confidence']
+                conf_class = "confidence-high" if conf > 0.8 else "confidence-medium" if conf > 0.6 else "confidence-low"
+                st.markdown(f'<div class="prediction-box"><strong>Prediction:</strong> {pred_data["predicted_class"]}<br><strong>Confidence:</strong> <span class="{conf_class}">{conf:.2%}</span></div>', unsafe_allow_html=True)
+                if show_confidence_chart: st.plotly_chart(px.bar(x=model_manager.label_encoders[category], y=pred_data['all_predictions'], title=f"{category.title()} Probabilities").update_layout(height=300), use_container_width=True)
+            if api_results: display_comparison(predictions_data, api_results)
     
-    # Advanced Real-time Section
     if api_results:
         st.markdown("---")
-        col_m1, col_m2 = st.columns([2, 1])
-        with col_m1:
-            display_api_data(city_data, api_results)
-            display_trend_charts(api_results['trends'])
-        with col_m2:
-            st.markdown("#### 🗺️ Station Location")
-            display_location_map(city_data['lat'], city_data['lon'])
-            
-        # New AQI Deep Dive
+        c_m1, c_m2 = st.columns([2, 1])
+        with c_m1: display_api_data(city_data, api_results); display_trend_charts(api_results['trends'])
+        with c_m2: st.markdown("#### 🗺️ Station Location"); display_location_map(city_data['lat'], city_data['lon'])
         display_aqi_deep_dive(api_results['air_quality'], api_results['trends'])
-        
-        # New Heatwave Deep Dive
         display_heatwave_deep_dive(api_results['heatwave'])
-        
-        # New Rainfall Deep Dive
         display_rainfall_deep_dive(api_results['rainfall'])
     
-    # AI Intelligence Section
-    if image is not None:
-        st.markdown("---")
-        st.markdown("### 🧠 AI Environmental Intelligence Report")
-        
+    if image:
+        st.markdown("---"); st.markdown("### 🧠 AI Environmental Intelligence Report")
         if ai_service and ai_service.is_configured():
             if st.button("🚀 Run Deep Satellite/AI Analysis"):
-                with st.spinner("Analyzing environment with Gemini AI..."):
-                    report = ai_service.analyze_environmental_image(image)
-                    st.markdown(report)
-        else:
-            st.warning("⚠️ To enable Advanced AI Analysis, please enter your free Gemini API Key in the sidebar.")
-            st.info("💡 **Tip:** You can get a free key in 30 seconds at [Google AI Studio](https://aistudio.google.com/)")
-    
-    # Grad-CAM Visualization
-    if image is not None and show_grad_cam and predictions_data:
+                with st.spinner("Analyzing..."): st.markdown(ai_service.analyze_environmental_image(image))
+        else: st.warning("⚠️ Enter Gemini API Key in sidebar.")
+
+    if image and show_grad_cam and 'predictions_data' in locals():
         st.markdown("### 🔍 Grad-CAM Visualizations")
-        
-        grad_cam_cols = st.columns(len(selected_categories))
-        
-        for idx, category in enumerate(selected_categories):
-            if category in predictions_data:
-                with grad_cam_cols[idx]:
-                    st.markdown(f"**{category.title()}**")
-                    
-                    # Generate Grad-CAM
-                    overlay, heatmap = model_manager.generate_grad_cam(image, category)
-                    
-                    if overlay is not None:
-                        try:
-                            # Convert BGR to RGB for display
-                            overlay_rgb = cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB)
-                            st.image(overlay_rgb, caption=f"Grad-CAM - {category}", use_container_width=True)
-                        except Exception as e:
-                            st.warning(f"Could not display Grad-CAM for {category}: {e}")
-                    else:
-                        st.warning(f"Grad-CAM visualization not available for {category}")
-    
-    # Information section
-    with st.expander("ℹ️ About EnviroVision India"):
-        st.markdown("""
-        **EnviroVision India** is an AI-powered system for environmental scene classification that helps analyze:
-        
-        - 🌧️ **Rainfall Intensity**: Light, Moderate, Heavy
-        - 🔥 **Heatwave Severity**: Normal, Mild, Extreme  
-        - 🌫️ **Air Quality Levels**: Good, Moderate, Unhealthy
-        
-        **Features:**
-        - Deep learning models using transfer learning (EfficientNet, ResNet)
-        - Grad-CAM visualizations for model interpretability
-        - Real-time classification through webcam
-        - Multi-category analysis
-        
-        **Data Sources:**
-        - Indian Meteorological Department (IMD)
-        - NASA Earth Observatory
-        - Central Pollution Control Board (CPCB)
-        """)
-    
-    # Model performance section
-    with st.expander("📈 Model Performance"):
-        st.markdown("### Model Accuracy Metrics")
-        
-        # Load and display model performance if available
-        results_dir = Path(config.get('paths.results_dir'))
-        
-        for category in selected_categories:
-            report_path = results_dir / f'{category}_classification_report.json'
-            if report_path.exists():
-                with open(report_path, 'r') as f:
-                    report = json.load(f)
-                
-                st.markdown(f"**{category.title()} Model:**")
-                
-                # Create metrics columns
-                metric_cols = st.columns(3)
-                
-                with metric_cols[0]:
-                    st.metric("Accuracy", f"{report['accuracy']:.3f}")
-                
-                with metric_cols[1]:
-                    st.metric("Macro F1-Score", f"{report['macro avg']['f1-score']:.3f}")
-                
-                with metric_cols[2]:
-                    st.metric("Weighted F1-Score", f"{report['weighted avg']['f1-score']:.3f}")
+        gc_cols = st.columns(len(selected_categories))
+        for idx, cat in enumerate(selected_categories):
+            if cat in predictions_data:
+                with gc_cols[idx]:
+                    st.markdown(f"**{cat.title()}**")
+                    overlay, _ = model_manager.generate_grad_cam(image, cat)
+                    if overlay is not None: st.image(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB), use_container_width=True)
 
 if __name__ == "__main__":
     main()

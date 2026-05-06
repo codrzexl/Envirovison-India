@@ -89,4 +89,4 @@ def main():
     print("3. You'll see basic predictions (not accurate)")
 
 if __name__ == "__main__":
-    main() 
+    main()
