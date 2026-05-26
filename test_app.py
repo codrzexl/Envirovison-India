@@ -3,6 +3,7 @@
 Quick test script for EnviroVision India
 """
 
+import importlib
 import sys
 import os
 from pathlib import Path
@@ -17,36 +18,20 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 def test_imports():
     """Test if all required modules can be imported"""
     print("🔍 Testing imports...")
-    
-    try:
-        import streamlit as st
-        print("✅ Streamlit imported successfully")
-    except ImportError as e:
-        print(f"❌ Streamlit import failed: {e}")
-    
-    try:
-        import tensorflow as tf
-        print("✅ TensorFlow imported successfully")
-    except ImportError as e:
-        print(f"❌ TensorFlow import failed: {e}")
-    
-    try:
-        import numpy as np
-        print("✅ NumPy imported successfully")
-    except ImportError as e:
-        print(f"❌ NumPy import failed: {e}")
-    
-    try:
-        import cv2
-        print("✅ OpenCV imported successfully")
-    except ImportError as e:
-        print(f"❌ OpenCV import failed: {e}")
-    
-    try:
-        import plotly.graph_objects as go
-        print("✅ Plotly imported successfully")
-    except ImportError as e:
-        print(f"❌ Plotly import failed: {e}")
+
+    modules = [
+        ("streamlit", "Streamlit"),
+        ("tensorflow", "TensorFlow"),
+        ("numpy", "NumPy"),
+        ("cv2", "OpenCV"),
+        ("plotly.graph_objects", "Plotly"),
+    ]
+    for module_name, label in modules:
+        try:
+            importlib.import_module(module_name)
+            print(f"✅ {label} imported successfully")
+        except ImportError as e:
+            print(f"❌ {label} import failed: {e}")
 
 def test_config():
     """Test configuration loading"""
